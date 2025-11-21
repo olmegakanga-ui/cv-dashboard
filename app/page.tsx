@@ -17,6 +17,7 @@ type ProfilCibleRow = {
   speaks_english: boolean | null;
   english_level: string | null;
   cv_language: string | null;
+  cv_url?: string | null; // ✅ lien vers le fichier CV dans Supabase Storage
 };
 
 type CvAnglaisRow = {
@@ -27,6 +28,7 @@ type CvAnglaisRow = {
   degree_level: string | null;
   field_of_study: string | null;
   cv_language: string | null;
+  cv_url?: string | null; // ✅ idem ici
 };
 
 type TabKey = "profil_cible" | "cv_anglais";
@@ -112,7 +114,7 @@ export default function HomePage() {
           </button>
         </header>
 
-        {/* Tabs */}
+        {/* Tabs + recherche */}
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-800">
             <TabButton
@@ -262,9 +264,20 @@ function ProfilCibleTable({ rows }: { rows: ProfilCibleRow[] }) {
                 </td>
                 <td className="px-3 py-2">
                   {row.file_name ? (
-                    <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-200">
-                      {row.file_name}
-                    </span>
+                    row.cv_url ? (
+                      <a
+                        href={row.cv_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-emerald-300 underline decoration-emerald-500/60 hover:bg-slate-700"
+                      >
+                        {row.file_name}
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-200">
+                        {row.file_name}
+                      </span>
+                    )
                   ) : (
                     "—"
                   )}
@@ -321,9 +334,20 @@ function CvAnglaisTable({ rows }: { rows: CvAnglaisRow[] }) {
               </td>
               <td className="px-3 py-2">
                 {row.file_name ? (
-                  <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-200">
-                    {row.file_name}
-                  </span>
+                  row.cv_url ? (
+                    <a
+                      href={row.cv_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-emerald-300 underline decoration-emerald-500/60 hover:bg-slate-700"
+                    >
+                      {row.file_name}
+                    </a>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-200">
+                      {row.file_name}
+                    </span>
+                  )
                 ) : (
                   "—"
                 )}
