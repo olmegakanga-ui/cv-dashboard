@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 /**
+ * Constant pour marquer les CV non lisibles automatiquement
+ * (doit être identique à ce que tu mets côté script Node)
+ */
+const INVALID_LABEL = "(CV non lisible automatiquement)";
+
+/**
  * Ligne standard pour tous les dashboards (tous, profils cibles, CV anglais)
  */
 type CandidateRow = {
@@ -27,6 +33,7 @@ type CandidateRow = {
 };
 
 type TabKey = "tous" | "profil_cible" | "cv_anglais";
+type ProfileFilter = "all" | "A" | "B" | "C" | "review";
 
 type Stats = {
   total: number;
@@ -45,6 +52,10 @@ export default function HomePage() {
   const [cvAnglais, setCvAnglais] = useState<CandidateRow[]>([]);
 
   const [search, setSearch] = useState("");
+  const [profileFilter, setProfileFilter] =
+    useState<ProfileFilter>("all");
+  const [hideInvalid, setHideInvalid] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -65,7 +76,9 @@ export default function HomePage() {
 
       if (errorAll) {
         console.error("Erreur tous candidats:", errorAll.message);
-        setErrorMsg("Erreur lors du chargement de la liste complète des candidats.");
+        setErrorMsg(
+          "Erreur lors du chargement de la liste complète des candidats."
+        );
       } else if (dataAll) {
         setAllCandidates(dataAll as CandidateRow[]);
       }
@@ -100,26 +113,48 @@ export default function HomePage() {
     }
   }
 
-  // Filtrage simple par nom
+  // Helpers filtres
+  function isInvalidRow(row: CandidateRow) {
+    return row.full_name === INVALID_LABEL;
+  }
+
+  function matchesProfileFilter(row: CandidateRow, filter: ProfileFilter) {
+    if (filter === "all") return true;
+    const t = (row.profile_type || "").toUpperCase().replace(/\s+/g, "");
+    if (filter === "A") return t === "A";
+    if (filter === "B") return t === "B";
+    if (filter === "C") return t === "C";
+    if (filter === "review")
+      return t === "ÀREVOIR" || t === "AREVOIR";
+    return true;
+  }
+
+  // Filtrage des lignes selon recherche + filtres
   const filteredAll = allCandidates.filter((row) => {
+    if (hideInvalid && isInvalidRow(row)) return false;
+    if (!matchesProfileFilter(row, profileFilter)) return false;
     if (!search) return true;
     const name = row.full_name ?? "";
     return name.toLowerCase().includes(search.toLowerCase());
   });
 
   const filteredProfilCible = profilCible.filter((row) => {
+    if (hideInvalid && isInvalidRow(row)) return false;
+    if (!matchesProfileFilter(row, profileFilter)) return false;
     if (!search) return true;
     const name = row.full_name ?? "";
     return name.toLowerCase().includes(search.toLowerCase());
   });
 
   const filteredCvAnglais = cvAnglais.filter((row) => {
+    if (hideInvalid && isInvalidRow(row)) return false;
+    if (!matchesProfileFilter(row, profileFilter)) return false;
     if (!search) return true;
     const name = row.full_name ?? "";
     return name.toLowerCase().includes(search.toLowerCase());
   });
 
-  // Statistiques par segment
+  // Statistiques par segment (non filtrées → sur la population réelle)
   const statsAll = computeStats(allCandidates);
   const statsProfil = computeStats(profilCible);
   const statsAnglais = computeStats(cvAnglais);
@@ -145,37 +180,63 @@ export default function HomePage() {
           </button>
         </header>
 
-        {/* Tabs + recherche */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-800">
-            <TabButton
-              active={activeTab === "tous"}
-              onClick={() => setActiveTab("tous")}
-            >
-              Tous les candidats
-            </TabButton>
-            <TabButton
-              active={activeTab === "profil_cible"}
-              onClick={() => setActiveTab("profil_cible")}
-            >
-              Profils cibles
-            </TabButton>
-            <TabButton
-              active={activeTab === "cv_anglais"}
-              onClick={() => setActiveTab("cv_anglais")}
-            >
-              CV en anglais
-            </TabButton>
+        {/* Tabs + recherche + filtres */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-2">
+            <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-800">
+              <TabButton
+                active={activeTab === "tous"}
+                onClick={() => setActiveTab("tous")}
+              >
+                Tous les candidats
+              </TabButton>
+              <TabButton
+                active={activeTab === "profil_cible"}
+                onClick={() => setActiveTab("profil_cible")}
+              >
+                Profils cibles
+              </TabButton>
+              <TabButton
+                active={activeTab === "cv_anglais"}
+                onClick={() => setActiveTab("cv_anglais")}
+              >
+                CV en anglais
+              </TabButton>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Rechercher par nom..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full sm:w-64 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-            />
+          <div className="flex flex-col sm:items-end gap-2">
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <input
+                type="text"
+                placeholder="Rechercher par nom..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full sm:w-64 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <select
+                value={profileFilter}
+                onChange={(e) =>
+                  setProfileFilter(e.target.value as ProfileFilter)
+                }
+                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="all">Tous les profils</option>
+                <option value="A">Profil A (≥ 80)</option>
+                <option value="B">Profil B (60–79)</option>
+                <option value="C">Profil C (40–59)</option>
+                <option value="review">Profil “À revoir”</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-xs sm:text-sm text-slate-300">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-600 bg-slate-900"
+                checked={hideInvalid}
+                onChange={(e) => setHideInvalid(e.target.checked)}
+              />
+              <span>Masquer les CV inutilisables</span>
+            </label>
           </div>
         </div>
 
@@ -183,14 +244,18 @@ export default function HomePage() {
         <ScoringInfo />
 
         {/* Bloc statistiques selon l'onglet */}
-        {activeTab === "tous" && (
-          <StatsBarAll stats={statsAll} />
-        )}
+        {activeTab === "tous" && <StatsBarAll stats={statsAll} />}
         {activeTab === "profil_cible" && (
-          <StatsBarProfil statsGlobal={statsAll} statsSegment={statsProfil} />
+          <StatsBarProfil
+            statsGlobal={statsAll}
+            statsSegment={statsProfil}
+          />
         )}
         {activeTab === "cv_anglais" && (
-          <StatsBarAnglais statsGlobal={statsAll} statsSegment={statsAnglais} />
+          <StatsBarAnglais
+            statsGlobal={statsAll}
+            statsSegment={statsAnglais}
+          />
         )}
 
         {/* Info / erreurs */}
@@ -207,9 +272,7 @@ export default function HomePage() {
 
         {/* Contenu des tabs */}
         <section className="mt-2 rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm p-4 shadow-xl shadow-black/50">
-          {activeTab === "tous" && (
-            <AllCandidatesTable rows={filteredAll} />
-          )}
+          {activeTab === "tous" && <AllCandidatesTable rows={filteredAll} />}
           {activeTab === "profil_cible" && (
             <ProfilCibleTable rows={filteredProfilCible} />
           )}
@@ -293,8 +356,6 @@ function ScoringInfo() {
 /* ---------- STATS ---------- */
 
 function computeStats(rows: CandidateRow[]): Stats {
-  const INVALID_LABEL = "(CV non lisible automatiquement)";
-
   let total = rows.length;
   let invalid = 0;
   let countA = 0;
