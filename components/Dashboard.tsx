@@ -285,8 +285,8 @@ export default function Dashboard({ lot }: { lot: Lot }) {
 
         if (error) throw error;
 
-        const chunk = (data ?? []) as CandidateRow[];
-        all = all.concat(chunk);
+        const chunk = (Array.isArray(resp.data) ? (resp.data as unknown as CandidateRow[]) : []);
+all = all.concat(chunk);
 
         if (chunk.length < pageSize) break;
         from += pageSize;
