@@ -16,7 +16,7 @@ export default function Home() {
           >
             <div className="text-lg font-medium">LOT 1</div>
             <div className="mt-1 text-sm text-slate-400">
-              Première vague de candidatures
+              Ancien lot (les ~600 premiers)
             </div>
           </Link>
 
@@ -26,7 +26,7 @@ export default function Home() {
           >
             <div className="text-lg font-medium">LOT 2</div>
             <div className="mt-1 text-sm text-slate-400">
-              Nouvelle vague de candidatures
+              Nouveau lot (+600 ajoutés)
             </div>
           </Link>
         </div>
