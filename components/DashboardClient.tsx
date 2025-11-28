@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from "react";
 
-type ProfileType = "A" | "B" | "C" | "À revoir" | null;
+type ProfileType = "A" | "B" | "C" | "À revoir" | null; // DB
+type ProfileFilter = "ALL" | "A" | "B" | "C" | "À revoir"; // UI (⚠️ pas de null)
+
 type ViewMode = "ALL" | "TARGET" | "ENGLISH";
 type LotFilter = "ALL" | "LOT1" | "LOT2";
 type ParseStatus = "done" | "failed" | "unusable" | "processing" | null;
@@ -40,14 +42,35 @@ type Stats = {
   retained: number; // done
 };
 
+function normalizeProfile(p: ProfileType): "A" | "B" | "C" | "À revoir" | null {
+  if (!p) return null;
+  const v = String(p).trim().toLowerCase();
+
+  if (v === "a") return "A";
+  if (v === "b") return "B";
+  if (v === "c") return "C";
+
+  // accepte variantes: "a revoir", "à revoir", "revoir", "review"
+  if (v.includes("revoir") || v.includes("review")) return "À revoir";
+
+  return null;
+}
+
 function computeStats(rows: Candidate[]): Stats {
   const uploaded = rows.length;
-  const unusable = rows.filter((r) => r.parse_status === "unusable").length;
-  const a = rows.filter((r) => r.profile_type === "A").length;
-  const b = rows.filter((r) => r.profile_type === "B").length;
-  const c = rows.filter((r) => r.profile_type === "C").length;
-  const toReview = rows.filter((r) => r.profile_type === "À revoir").length;
+
+  // on compte failed + unusable comme inutilisables
+  const unusable = rows.filter(
+    (r) => r.parse_status === "unusable" || r.parse_status === "failed"
+  ).length;
+
+  const a = rows.filter((r) => normalizeProfile(r.profile_type) === "A").length;
+  const b = rows.filter((r) => normalizeProfile(r.profile_type) === "B").length;
+  const c = rows.filter((r) => normalizeProfile(r.profile_type) === "C").length;
+  const toReview = rows.filter((r) => normalizeProfile(r.profile_type) === "À revoir").length;
+
   const retained = rows.filter((r) => r.parse_status === "done").length;
+
   return { uploaded, unusable, a, b, c, toReview, retained };
 }
 
@@ -76,17 +99,20 @@ function isTargetProfile(c: Candidate): boolean {
   const exp = c.total_experience_years ?? 0;
   const expOk = exp >= 3;
 
-  const englishOk = c.speaks_english === true || c.cv_language === "en";
-
-  return goodDegree && goodField && expOk && englishOk;
+  // ✅ IMPORTANT:
+  // "Profils ciblés" ne doit PAS dépendre de l'anglais,
+  // car tu as un onglet séparé "CV en anglais".
+  return goodDegree && goodField && expOk;
 }
 
 function isEnglishCv(c: Candidate): boolean {
-  return c.cv_language === "en" || c.speaks_english === true;
+  // ✅ "CV en anglais" = langue du CV détectée en anglais
+  return (c.cv_language || "").toLowerCase() === "en";
 }
 
 function badgeColor(profile: ProfileType) {
-  switch (profile) {
+  const p = normalizeProfile(profile);
+  switch (p) {
     case "A":
       return "#16a34a";
     case "B":
@@ -134,11 +160,11 @@ export default function DashboardClient({
   // 👉 Boutons LOT1 / LOT2 / AUTRES
   const [lotFilter, setLotFilter] = useState<LotFilter>("ALL");
 
-  // 👉 3 onglets comme d’habitude
+  // 👉 3 onglets
   const [viewMode, setViewMode] = useState<ViewMode>("ALL");
 
   // filtres
-  const [profileFilter, setProfileFilter] = useState<ProfileType | "ALL">("ALL");
+  const [profileFilter, setProfileFilter] = useState<ProfileFilter>("ALL"); // ✅ plus de null
   const [statusFilter, setStatusFilter] = useState<ParseStatus | "ALL">("ALL");
   const [minScore, setMinScore] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -167,7 +193,11 @@ export default function DashboardClient({
     const min = minScore.trim() ? Number(minScore) : null;
 
     let rows = baseRows.filter((c) => {
-      if (profileFilter !== "ALL" && c.profile_type !== profileFilter) return false;
+      if (profileFilter !== "ALL") {
+        const p = normalizeProfile(c.profile_type);
+        if (p !== profileFilter) return false;
+      }
+
       if (statusFilter !== "ALL" && c.parse_status !== statusFilter) return false;
 
       if (min !== null) {
@@ -179,14 +209,22 @@ export default function DashboardClient({
         const blob = `${c.full_name || ""} ${c.file_name || ""}`.toLowerCase();
         if (!blob.includes(q)) return false;
       }
+
       return true;
     });
 
     rows = rows.sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
-      if (sortKey === "score") return ((a.score_profil ?? -1) - (b.score_profil ?? -1)) * dir;
-      if (sortKey === "exp") return ((a.total_experience_years ?? -1) - (b.total_experience_years ?? -1)) * dir;
-      return (a.full_name || "").toLowerCase().localeCompare((b.full_name || "").toLowerCase()) * dir;
+      if (sortKey === "score")
+        return ((a.score_profil ?? -1) - (b.score_profil ?? -1)) * dir;
+      if (sortKey === "exp")
+        return (
+          ((a.total_experience_years ?? -1) - (b.total_experience_years ?? -1)) *
+          dir
+        );
+      return (a.full_name || "")
+        .toLowerCase()
+        .localeCompare((b.full_name || "").toLowerCase()) * dir;
     });
 
     return rows;
@@ -195,8 +233,14 @@ export default function DashboardClient({
   const stats = useMemo(() => computeStats(baseRows), [baseRows]);
 
   const viewTitle =
-    viewMode === "ALL" ? "Tous les candidats" : viewMode === "TARGET" ? "Profils ciblés" : "CV en anglais";
-  const lotTitle = lotFilter === "ALL" ? "AUTRES (LOT1 + LOT2)" : lotFilter;
+    viewMode === "ALL"
+      ? "Tous les candidats"
+      : viewMode === "TARGET"
+      ? "Profils ciblés"
+      : "CV en anglais";
+
+  const lotTitle =
+    lotFilter === "ALL" ? "AUTRES (LOT1 + LOT2)" : lotFilter;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0b1220", color: "#e5e7eb", padding: 24 }}>
@@ -209,20 +253,13 @@ export default function DashboardClient({
         </p>
 
         {/* Boutons LOT */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            marginBottom: 12,
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
           <LotBtn active={lotFilter === "LOT1"} onClick={() => setLotFilter("LOT1")}>LOT1</LotBtn>
           <LotBtn active={lotFilter === "LOT2"} onClick={() => setLotFilter("LOT2")}>LOT2</LotBtn>
           <LotBtn active={lotFilter === "ALL"} onClick={() => setLotFilter("ALL")}>AUTRES</LotBtn>
         </div>
 
-        {/* Onglets (3 dashboards) */}
+        {/* Onglets */}
         <div
           style={{
             display: "flex",
@@ -235,15 +272,9 @@ export default function DashboardClient({
             marginBottom: 16,
           }}
         >
-          <Tab active={viewMode === "ALL"} onClick={() => setViewMode("ALL")}>
-            Tous
-          </Tab>
-          <Tab active={viewMode === "TARGET"} onClick={() => setViewMode("TARGET")}>
-            Profils ciblés
-          </Tab>
-          <Tab active={viewMode === "ENGLISH"} onClick={() => setViewMode("ENGLISH")}>
-            CV en anglais
-          </Tab>
+          <Tab active={viewMode === "ALL"} onClick={() => setViewMode("ALL")}>Tous</Tab>
+          <Tab active={viewMode === "TARGET"} onClick={() => setViewMode("TARGET")}>Profils ciblés</Tab>
+          <Tab active={viewMode === "ENGLISH"} onClick={() => setViewMode("ENGLISH")}>CV en anglais</Tab>
         </div>
 
         {/* note scoring */}
@@ -272,7 +303,7 @@ export default function DashboardClient({
           }}
         >
           <Stat label="Nombre de CV (vue)" value={stats.uploaded} />
-          <Stat label="CV inutilisables" value={stats.unusable} color="#ef4444" />
+          <Stat label="CV inutilisables (failed+unusable)" value={stats.unusable} color="#ef4444" />
           <Stat label="Rendus (done)" value={stats.retained} color="#22c55e" />
           <Stat label="Score A" value={stats.a} color="#16a34a" />
           <Stat label="Score B" value={stats.b} color="#0ea5e9" />
@@ -296,7 +327,7 @@ export default function DashboardClient({
           <Field label="Type de profil">
             <select
               value={profileFilter}
-              onChange={(e) => setProfileFilter(e.target.value === "ALL" ? "ALL" : (e.target.value as ProfileType))}
+              onChange={(e) => setProfileFilter(e.target.value as ProfileFilter)}
               style={selectStyle}
             >
               <option value="ALL">Tous</option>
@@ -322,11 +353,21 @@ export default function DashboardClient({
           </Field>
 
           <Field label="Score minimum">
-            <input value={minScore} onChange={(e) => setMinScore(e.target.value)} placeholder="ex: 80" style={inputStyle} />
+            <input
+              value={minScore}
+              onChange={(e) => setMinScore(e.target.value)}
+              placeholder="ex: 80"
+              style={inputStyle}
+            />
           </Field>
 
           <Field label="Recherche (nom / fichier)">
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ex: KABUYA, 4627.pdf..." style={inputStyle} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ex: KABUYA, 4627.pdf..."
+              style={inputStyle}
+            />
           </Field>
 
           <Field label="Tri">
@@ -402,7 +443,7 @@ export default function DashboardClient({
                             fontSize: 12,
                           }}
                         >
-                          {c.profile_type || "—"}
+                          {normalizeProfile(c.profile_type) || "—"}
                         </span>
                       </Td>
                       <Td style={{ textAlign: "center" }}>{c.score_profil ?? "—"}</Td>
@@ -439,8 +480,8 @@ export default function DashboardClient({
         </div>
 
         <div style={{ marginTop: 14, color: "#94a3b8", fontSize: 12 }}>
-          <b style={{ color: "#e5e7eb" }}>Rappel :</b> “Profils ciblés” = filtre métier.  
-          Donc un score A peut ne pas apparaître s’il ne match pas le profil cible.
+          <b style={{ color: "#e5e7eb" }}>Rappel :</b> “Profils ciblés” = filtre métier (diplôme+domaine+expérience).  
+          L’anglais est isolé dans l’onglet “CV en anglais”.
         </div>
       </div>
     </div>
